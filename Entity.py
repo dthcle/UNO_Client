@@ -1,14 +1,21 @@
 import socket
 import hashlib
 import rsa
+import os
 import base64
+import logging
 from util import *
 from CONST import *
 from PROTOCOL import *
 
+logging.basicConfig(level=logging.INFO,
+                    filename='client.log',
+                    format='%(asctime)s - %(pathname)s[line:%(lineno)d] - %(levelname)s: %(message)s')
+
 
 class Client:
     def __init__(self, game_port=CLIENT_GAME_PORT):
+        logging.info(f"Initiate the Client...")
         self.username = ''
         self.password = ''
         self.game_addr = ''
@@ -16,39 +23,93 @@ class Client:
         self.is_login = False
         self.match_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.game_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.game_server_socket = None
+        self.game_server_addr = None
+        logging.info(f"Initiate the Client complete!")
 
     def set_username_password(self, username, password):
         self.username = username
         self.password = Client.md5_encode(password)
 
     def login(self):
+        logging.info(f"Connect to the match server......")
         self.match_socket.connect((MATCH_SERVER_ADDR, MATCH_SERVER_PORT))
         self._send_login_msg()
         msg = self.match_socket.recv(DATA_PACK_MAX_SIZE)
         protocol, data = response_parser(secret_decode(msg))
         if protocol == STATUS_ALL[OK]:
-            self.game_addr = data[CLIENT_ADDR]
+            self.game_addr = data[J_CLIENT_ADDR]
             self.is_login = True
-        elif protocol == STATUS_ALL[USERNAME_PASSWORD_WRONG]:
-            print(f"ERROR: {STATUS_NAME[USERNAME_PASSWORD_WRONG]}")
+            logging.info(f"Login successfully!")
+            self._init_socket()
+            logging.info(f"Close the connection")
         else:
-            print(f"ERROR: {STATUS_NAME[SERVER_ERROR]}")
+            print(f"ERROR: {STATUS_NAME[STATUS_ALL.index(protocol)]}")
+            self._init_socket()
+
+    def match(self, player_num: int):
+        logging.info(f"Matching......")
+        self.match_socket.connect((MATCH_SERVER_ADDR, MATCH_SERVER_PORT))
+        self._send_match_msg(player_num)
+        msg = self.match_socket.recv(DATA_PACK_MAX_SIZE)
+        protocol, data = response_parser(secret_decode(msg))
+        if protocol == STATUS_ALL[OK]:
+            self.game_socket.bind((self.game_addr, self.game_port))
+            self.game_socket.listen(1)
+            self.game_server_socket, self.game_server_addr = self.game_socket.accept()
+            logging.info(f"Matching complete! Begin to start game......")
+            self.game_start()
+        else:
+            print(f"ERROR: {STATUS_NAME[STATUS_ALL.index(protocol)]}")
+            self._init_socket()
+
+    def game_start(self):
+        logging.info(f"Game Start!")
+        msg = self.game_server_socket.recv(DATA_PACK_MAX_SIZE)
+        logging.info(f"Get response from game server ({self.game_server_addr})")
+        protocol, data = response_parser(secret_decode(msg))
+        logging.info(f"内容为 {protocol}: {data}")
+        if protocol == GAME_INIT_PROTOCOL:
+            # 游戏开始前 向游戏服务器发送自己的用户名 使服务器知道 用户名 和 ip 的绑定关系
+            self.game_server_socket.send(secret_encode(request_encoder(CHECK_USER_IDENTITY_PROTOCOL, {J_USERNAME: self.username})))
+        else:
+            print(f"ERROR: {STATUS_NAME[STATUS_ALL.index(protocol)]}")
+        msg = self.game_server_socket.recv(DATA_PACK_MAX_SIZE)
+        logging.info(f"Get response from game server ({self.game_server_addr})")
+        protocol, data = response_parser(secret_decode(msg))
+        logging.info(f"内容为 {protocol}: {data}")
+        if protocol == GAME_START_PROTOCOL:
+            os.system('cls')
+            Game(self.username, data, self.game_server_socket).run()
+        else:
+            print(f"ERROR: {STATUS_NAME[STATUS_ALL.index(protocol)]}")
 
     def _send_match_msg(self, player_num: int):
-        match_msg = ''
-        self.match_socket.connect((MATCH_SERVER_ADDR, MATCH_SERVER_PORT))
-        self.match_socket.send(secret_encode(request_encoder(MATCH_PROTOCOL, match_msg)))
+        match_data = {J_CLIENT_PORT: CLIENT_GAME_PORT, J_PLAYER_NUM: str(player_num)}
+        # self.match_socket.connect((MATCH_SERVER_ADDR, MATCH_SERVER_PORT))
+        self.match_socket.send(secret_encode(request_encoder(MATCH_PROTOCOL, match_data)))
 
     def _send_login_msg(self):
         user_info = {
-            USERNAME: self.username,
-            PASSWORD: self.password
+            J_USERNAME: self.username,
+            J_PASSWORD: self.password
         }
         login_msg = request_encoder(LOGIN_PROTOCOL, user_info)
         self.match_socket.send(secret_encode(login_msg))
 
-    def _request_encode(self, ):
+    def _request_encode(self, protocol, data: dict):
         pass
+
+    def _response_parse(self, response):
+        pass
+
+    def _init_socket(self, name='match'):
+        if name == 'game':
+            self.game_socket.close()
+            self.game_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        elif name == 'match':
+            self.match_socket.close()
+            self.match_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     @staticmethod
     def md5_encode(password: str):
@@ -60,6 +121,26 @@ class Client:
         md5_encoder = hashlib.md5()
         md5_encoder.update((PREFIX_SALT+password+SUFFIX_SALT).encode())
         return md5_encoder.hexdigest()
+
+
+class Game:
+    """
+    游戏类，所有游戏内的操作都由这个类完成，包括 UI 的生成
+    """
+    def __init__(self, username, init_data: dict, sock: socket.socket):
+        logging.info(f"Init game with data")
+        self.username = username
+        self.socket = sock
+        self.direction = init_data[J_DIRECTION]
+        self.hand_card = init_data[J_HAND_CARD]
+        self.discard = init_data[J_ALLOW_TO_DISCARD]
+        self.guide = init_data[J_THE_FIRST_GUIDE]
+        self.public_key = init_data[J_RSA_PUBLIC_KEY]
+        logging.info(f"Init game successfully")
+
+    def run(self):
+        # 先获取初始化游戏的信息
+        pass
 
 
 class RSACrypto:

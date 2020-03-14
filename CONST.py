@@ -44,14 +44,23 @@ MATCH_SERVER_PORT = 20000
 
 # CLIENT
 CLIENT_GAME_ADDR = ""
-CLIENT_GAME_PORT = 22000
+CLIENT_GAME_PORT = 23000
 
 # ENCODE
 RSA = 'rsa'
 
 # JSON KEY
-USERNAME = 'username'
-PASSWORD = 'password'
-CLIENT_ADDR = 'client_addr'
-ACCEPT_PORT = 'accept_port'
-PLAYER_NUM = 'player_num'
+J_USERNAME = 'username'
+J_PASSWORD = 'password'
+J_CLIENT_ADDR = 'client_addr'
+J_CLIENT_PORT = 'client_port'
+J_PLAYER_NUM = 'player_num'
+J_DIRECTION = 'direction'
+J_PLAYER_HAND_NUM_LIST = 'player_hand_num_list'
+J_HAND_CARD = 'hand_card'
+J_ALLOW_TO_DISCARD = 'allow_to_discard'
+J_THE_FIRST_GUIDE = 'the_first_guide'
+J_RSA_PUBLIC_KEY = 'rsa_public_key'
+
+
+
