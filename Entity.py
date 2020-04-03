@@ -4,6 +4,7 @@ import rsa
 import os
 import base64
 import logging
+import time
 from util import *
 from CONST import *
 from PROTOCOL import *
@@ -46,6 +47,12 @@ class Client:
         else:
             print(f"ERROR: {STATUS_NAME[STATUS_ALL.index(protocol)]}")
             self._init_socket()
+
+    def logout(self):
+        logging.info(f"Logout.....")
+        self.match_socket.connect((MATCH_SERVER_ADDR, MATCH_SERVER_PORT))
+        self._send_logout_msg()
+        return
 
     def match(self, player_num: int):
         logging.info(f"Matching......")
@@ -94,8 +101,12 @@ class Client:
             J_USERNAME: self.username,
             J_PASSWORD: self.password
         }
-        login_msg = request_encoder(LOGIN_PROTOCOL, user_info)
-        self.match_socket.send(secret_encode(login_msg))
+        login_msg = secret_encode(request_encoder(LOGIN_PROTOCOL, user_info))
+        self.match_socket.send(login_msg)
+
+    def _send_logout_msg(self):
+        logout_msg = secret_encode(request_encoder(LOGOUT_PROTOCOL))
+        self.match_socket.send(logout_msg)
 
     def _request_encode(self, protocol, data: dict):
         pass
@@ -129,17 +140,90 @@ class Game:
     """
     def __init__(self, username, init_data: dict, sock: socket.socket):
         logging.info(f"Init game with data")
+        # 当前用户名
         self.username = username
+        # 与游戏服务器交互的套接字
         self.socket = sock
+        # 当前游戏的进行方向(顺时针还是逆时针)
         self.direction = init_data[J_DIRECTION]
+        # 当前玩家的手牌内容
         self.hand_card = init_data[J_HAND_CARD]
+        # 当前对局中的玩家的用户名与位次
+        self.players_list = init_data[J_PLAYERS_LIST]
+        # 当前对局中各玩家的手牌数
+        self.hand_card_num_list = init_data[J_HAND_CARD_NUM_LIST]
+        # 当前玩家在对局中的位次
+        self.self_index = self.players_list.index(self.username)
+        # 是否轮到当前玩家出牌
         self.discard = init_data[J_ALLOW_TO_DISCARD]
+        # 当前的引导牌
         self.guide = init_data[J_THE_FIRST_GUIDE]
-        self.public_key = init_data[J_RSA_PUBLIC_KEY]
+        # 当前玩家的RSA公私钥
+        self.public_key = rsa.PublicKey.load_pkcs1(init_data[J_RSA_PUBLIC_KEY])
+        self.private_key = rsa.PrivateKey.load_pkcs1(init_data[J_RSA_PUBLIC_KEY])
         logging.info(f"Init game successfully")
 
     def run(self):
-        # 先获取初始化游戏的信息
+        # 循环绘画UI
+        while True:
+            self.draw()
+
+            # 刷新率
+            time.sleep(1/FPS)
+
+    def draw(self):
+        # "绘制"游戏界面
+        os.system('cls')
+        print("游戏对局中......")
+        for each in range(len(self.players_list)-1):
+            # index_tmp = clockwise_index_return(self.self_index, each, len(self.players_list))
+            index_tmp = queue_index_return(self.self_index+1, each, len(self.players_list), self.direction)
+            self.draw_players_info(index_tmp)
+        self.draw_user_info()
+        self.draw_warning()
+        self.draw_user_operation()
+
+    def draw_players_info(self, player_index):
+        str_tmp = ''
+        player_username = self.players_list[player_index]
+        if self.discard == player_username:
+            str_tmp += UI_DISCARD_USER
+        else:
+            str_tmp += UI_NORMAL_USER
+        str_tmp += ' ' + player_username + ': ' + str(self.hand_card_num_list[player_index])
+        print(str_tmp)
+
+    def draw_user_info(self):
+        # 绘制手牌
+        # 初始化字符串
+        string = ''
+        # 占位字符串的初始化
+        blank = ' '
+        # 卡片头部
+        for each in range(self.hand_card_num_list[self.self_index]):
+            print(f"+{'-'*CARD_DRAW_LENGTH}+   ", end='')
+        print('')
+        # 头部数字(符号)
+        for each in self.hand_card:
+            print(f"|{CARD_CONTENT_DICT[each[CARD_CONTENT_INDEX]]}{blank*(CARD_DRAW_LENGTH-CARD_CONTENT_DRAW_REVISE[each[CARD_CONTENT_INDEX]])}|{blank*CARD_GAP}", end='')
+        print('')
+        # 卡片颜色
+        for each in self.hand_card:
+            print(f"|{blank*CARD_COLOR_CENTER_GAP}{CARD_COLOR_DICT[each[CARD_COLOR_INDEX]]}{blank*CARD_COLOR_CENTER_GAP}|{blank*CARD_GAP}", end='')
+        print('')
+        # 尾部数字(符号)
+        for each in self.hand_card:
+            print(f"|{blank*(CARD_DRAW_LENGTH-CARD_CONTENT_DRAW_REVISE[each[CARD_CONTENT_INDEX]])}{CARD_CONTENT_DICT[each[CARD_CONTENT_INDEX]]}|{blank*CARD_GAP}", end='')
+        print('')
+        # 卡片底部
+        for each in range(self.hand_card_num_list[self.self_index]):
+            print(f"+{'-'*CARD_DRAW_LENGTH}+   ", end='')
+        print('')
+
+    def draw_warning(self):
+        pass
+
+    def draw_user_operation(self):
         pass
 
 

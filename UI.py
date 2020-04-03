@@ -12,7 +12,7 @@ def ui_menu(client: Client):
     """
     menu_option_name = ['Login with a registered account', 'Match a game', 'setting']
     menu_option_func = [func_login, func_match, func_setting]
-    menu_choice = [str(each+1) for each in range(len(menu_option_name))]
+    # menu_choice = [str(each+1) for each in range(len(menu_option_name))]
     login_fun = [1, 2]
     no_login_fun = [0, 2]
     available_option = []
@@ -46,12 +46,13 @@ def ui_menu(client: Client):
             , end='')
         return
 
-    if choice <= len(available_option):
-        available_option[choice-1](client)
-    elif choice == '0':
+    if choice == 0:
         print("See you later...")
-        time.sleep(3)
+        client.logout()
+        time.sleep(1)
         exit(0)
+    elif choice <= len(available_option):
+        available_option[choice-1](client)
     else:
         os.system('cls')
         print(
@@ -95,4 +96,4 @@ def func_match(client: Client):
 
 
 def func_setting(client: Client):
-    pass
+    print("setting UI constructing......")
